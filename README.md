@@ -1,13 +1,10 @@
 ## 联机象棋
 
-[TOC]
-
 ### 需求
 
 - [x] 登录、注册
 - [x] 在线人人匹配对战（待完善）
 - [ ] 人机对战(待实现)
-- [ ] 
 
 ### 架构与开发技术
 
@@ -26,19 +23,19 @@
 
 1. 选棋下棋总体流程图
 
-![未命名文件](/Users/zjx/Downloads/未命名文件.png)
+![选棋下棋流程图](https://github.com/zjx1230/chess/blob/main/assert/选棋下棋流程图.png)
 
 2. 判断棋子移动是否合法
 
    **利用面向对象编程的多态特性，首先构建一个抽象类Chess，其中包含一个抽象方法isAllowMove(),由各类棋子继承编写自己的走法规则约束**
 
-![象棋类图](/Users/zjx/Downloads/象棋类图.png)
+![象棋类图](https://github.com/zjx1230/chess/blob/main/assert/象棋类图.png)
 
 #### 3. 人人对战匹配
 
 ​	目前暂时是使用阻塞队列实现，但实际多人使用时还是会存在一些并发问题，后面再完善。其当前流程图如下：
 
-![游戏匹配流程图](/Users/zjx/Downloads/游戏匹配流程图.png)
+![游戏匹配流程图](https://github.com/zjx1230/chess/blob/main/assert/游戏匹配流程图.png)
 
 #### 4. 判断是否被将
 
@@ -78,5 +75,5 @@ public class Command {
 
 #### 8. 最终实现效果图
 
-![image-20210701205543397](/Users/zjx/Library/Application Support/typora-user-images/image-20210701205543397.png)
+![象棋界面效果](https://github.com/zjx1230/chess/blob/main/assert/象棋界面效果.png)
 
