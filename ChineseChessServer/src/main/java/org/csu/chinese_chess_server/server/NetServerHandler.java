@@ -11,6 +11,8 @@ import org.csu.chinese_chess_server.pojo.User;
 import org.csu.chinese_chess_server.service.UserService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
+
+import java.util.Random;
 import java.util.concurrent.*;
 
 import static org.csu.chinese_chess_server.server.SessionHolder.*;
@@ -30,7 +32,7 @@ public class NetServerHandler extends ChannelInboundHandlerAdapter {
 
     @Override
     public void channelRead(ChannelHandlerContext channelHandlerContext, Object msg) throws Exception {
-        System.out.println(Thread.currentThread());
+//        System.out.println(Thread.currentThread());
         Command command = (Command) msg;
         String commandType = command.getCommandType();
         switch (commandType) {
@@ -38,73 +40,74 @@ public class NetServerHandler extends ChannelInboundHandlerAdapter {
                 SessionHolder.mp.put(command.getUserId(), channelHandlerContext.channel());
                 break;
             case CommandType.COMMAND_CHOOSE:            // 客户端匹配游戏对手
-                SessionHolder.q.offer(command.getUserId());
-                SessionHolder.lock.lock();
-                if (SessionHolder.IsStart.getOrDefault(command.getUserId(), false)) {
-                    SessionHolder.lock.unlock();
-                    break;
+                Integer enemyId;
+                synchronized (SessionHolder.class) {
+                    if (isStart.contains(command.getUserId())) break;
+                    enemyId = SessionHolder.q.poll();
+                    if (enemyId == null || command.getUserId().equals(enemyId)) {
+                        SessionHolder.q.offer(command.getUserId());
+                    } else {
+                        SessionHolder.q.remove(command.getUserId());
+                        isStart.add(command.getUserId());
+                        isStart.add(enemyId);
+                    }
                 }
-                Integer enemyId = SessionHolder.q.poll(5, TimeUnit.SECONDS);
-
-                if (command.getUserId().equals(enemyId)) {
-                    enemyId = SessionHolder.q.poll(5, TimeUnit.SECONDS);
-                }
-
-                SessionHolder.q.remove(command.getUserId());
 
                 if (enemyId == null || enemyId.equals(command.getUserId())) {
-                    SessionHolder.IsStart.put(command.getUserId(), false);
-                    SessionHolder.lock.unlock();
                     Command command1 = new Command();
                     command1.setCommandType(CommandType.COMMAND_CHOOSE_FAIL);
-                    channelHandlerContext.channel().writeAndFlush(command1);
-                } else {
-                    SessionHolder.IsStart.put(command.getUserId(), true);
-                    SessionHolder.IsStart.put(enemyId, true);
-                    SessionHolder.lock.unlock();
-                    Command command1 = new Command();
-                    Command command2 = new Command();
-                    command1.setEnemyId(enemyId);
-                    command1.setCommandType(CommandType.COMMAND_CHOOSE_SUCCESS);
-                    command2.setEnemyId(command.getUserId());
-                    command2.setCommandType(CommandType.COMMAND_CHOOSE_SUCCESS);
-                    if (UserHelper.userMap.containsKey(enemyId)) {
-                        command1.setEnemyName(UserHelper.userMap.get(enemyId));
-                    } else {
-                        User user = userService.getUser(enemyId);
-                        UserHelper.userMap.put(enemyId, user.getUserName());
-                        command1.setEnemyName(user.getUserName());
-                    }
+                    Thread.sleep(3000);
 
-                    if (UserHelper.userMap.containsKey(command.getUserId())) {
-                        command2.setEnemyName(UserHelper.userMap.get(command.getUserId()));
-                    } else {
-                        User user = userService.getUser(command.getUserId());
-                        UserHelper.userMap.put(command.getUserId(), user.getUserName());
-                        command2.setEnemyName(user.getUserName());
+                    synchronized (SessionHolder.class) {
+                        if (isStart.contains(command.getUserId())) break;
+                        channelHandlerContext.channel().writeAndFlush(command1);
                     }
-
-                    int player = ThreadLocalRandom.current().nextInt(2);
-                    command1.setPlayer((short) player);
-                    command2.setPlayer((short) (1 - player));
-                    channelHandlerContext.channel().writeAndFlush(command1);
-                    SessionHolder.mp.get(enemyId).writeAndFlush(command2);
+                    break;
                 }
+
+                Command command1 = new Command();
+                Command command2 = new Command();
+                command1.setEnemyId(enemyId);
+                command1.setCommandType(CommandType.COMMAND_CHOOSE_SUCCESS);
+                command2.setEnemyId(command.getUserId());
+                command2.setCommandType(CommandType.COMMAND_CHOOSE_SUCCESS);
+
+                String enemyName1 = UserHelper.userMap.get(enemyId);
+                if (enemyName1 != null) {
+                    command1.setEnemyName(enemyName1);
+                } else {
+                    User user = userService.getUser(enemyId);
+                    UserHelper.userMap.put(enemyId, user.getUserName());
+                    command1.setEnemyName(user.getUserName());
+                }
+
+                String enemyName2 = UserHelper.userMap.get(command.getUserId());
+                if (enemyName2 != null) {
+                    command2.setEnemyName(enemyName2);
+                } else {
+                    User user = userService.getUser(command.getUserId());
+                    UserHelper.userMap.put(command.getUserId(), user.getUserName());
+                    command2.setEnemyName(user.getUserName());
+                }
+
+                Random random = new Random();
+                int player = random.nextInt(2);
+                command1.setPlayer((short) player);
+                command2.setPlayer((short) (1 - player));
+                channelHandlerContext.channel().writeAndFlush(command1);
+                SessionHolder.mp.get(enemyId).writeAndFlush(command2);
                 break;
             case CommandType.COMMAND_RUN:
                 SessionHolder.mp.get(command.getEnemyId()).writeAndFlush(command);
                 break;
             case CommandType.COMMAND_REMOTE_DISCONNECT:
-                Command command1 = new Command();
-                command1.setCommandType(CommandType.COMMAND_OTHER_CONNECT_FAIL);
-                mp.get(command.getEnemyId()).writeAndFlush(command1).sync();
-                lock.lock();
-                q.remove(command.getUserId());
-                q.remove(command.getEnemyId());
-                mp.remove(command.getUserId());
-                IsStart.remove(command.getUserId());
-                IsStart.put(command.getEnemyId(), false);
-                lock.unlock();
+                Command command3 = new Command();
+                command3.setCommandType(CommandType.COMMAND_OTHER_CONNECT_FAIL);
+                synchronized (SessionHolder.class) {
+                    isStart.remove(command.getUserId());
+                    isStart.remove(command.getEnemyId());
+                }
+                mp.get(command.getEnemyId()).writeAndFlush(command3).sync();
                 break;
             case CommandType.COMMAND_REGRET:
             case CommandType.COMMAND_REGRET_SUCCESS:
@@ -113,12 +116,10 @@ public class NetServerHandler extends ChannelInboundHandlerAdapter {
                 break;
             case CommandType.COMMAND_GIVE_IN:
             case CommandType.COMMAND_WIN:
-                lock.lock();
-                q.remove(command.getUserId());
-                q.remove(command.getEnemyId());
-                IsStart.remove(command.getUserId());
-                IsStart.put(command.getEnemyId(), false);
-                lock.unlock();
+                synchronized (SessionHolder.class) {
+                    isStart.remove(command.getUserId());
+                    isStart.remove(command.getEnemyId());
+                }
                 mp.get(command.getEnemyId()).writeAndFlush(command).sync();
                 break;
         }
